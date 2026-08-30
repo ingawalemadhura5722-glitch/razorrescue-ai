@@ -4,11 +4,19 @@ MAX_RECOVERY_ATTEMPTS = 3
 def evaluate_recovery_policy(
     recommended_action: str,
     attempt_number: int,
-    amount: float
+    amount: float,
+    confidence: float
 ):
-    # -----------------------------
-    # STOP AFTER MAX ATTEMPTS
-    # -----------------------------
+    if confidence < 0.70:
+        return {
+            "allowed": False,
+            "reason":
+                "Decision confidence is below the minimum threshold and requires manual review."
+        }
+
+    # ----------------------------------------
+    # MAXIMUM ATTEMPTS REACHED
+    # ----------------------------------------
 
     if attempt_number >= MAX_RECOVERY_ATTEMPTS:
         return {
@@ -17,9 +25,9 @@ def evaluate_recovery_policy(
                 "Maximum recovery attempt limit reached."
         }
 
-    # -----------------------------
-    # STOP_RECOVERY NEVER EXECUTES
-    # -----------------------------
+    # ----------------------------------------
+    # STOP RECOVERY
+    # ----------------------------------------
 
     if recommended_action == "STOP_RECOVERY":
         return {
@@ -28,9 +36,9 @@ def evaluate_recovery_policy(
                 "Recovery engine requested stopping further attempts."
         }
 
-    # -----------------------------
-    # LARGE VALUE ESCALATION
-    # -----------------------------
+    # ----------------------------------------
+    # HIGH VALUE PAYMENT
+    # ----------------------------------------
 
     if amount >= 50000:
         return {
@@ -39,9 +47,9 @@ def evaluate_recovery_policy(
                 "High-value payment requires manual review."
         }
 
-    # -----------------------------
+    # ----------------------------------------
     # ALLOWED ACTIONS
-    # -----------------------------
+    # ----------------------------------------
 
     allowed_actions = {
         "RETRY_PAYMENT",
@@ -56,6 +64,10 @@ def evaluate_recovery_policy(
             "reason":
                 "Recommended recovery action is not permitted."
         }
+
+    # ----------------------------------------
+    # EVERYTHING PASSED
+    # ----------------------------------------
 
     return {
         "allowed": True,

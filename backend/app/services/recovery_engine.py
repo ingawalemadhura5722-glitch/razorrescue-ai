@@ -1,3 +1,8 @@
+from app.services.ai_recovery_service import (
+    analyze_payment_with_ai
+)
+
+
 def diagnose_failure(
     failure_reason: str | None,
     method: str | None,
@@ -21,7 +26,8 @@ def diagnose_failure(
             "confidence": 0.95,
             "recommended_action": "RETRY_PAYMENT",
             "reasoning":
-                "The failure appears temporary, so another attempt may succeed."
+                "The failure appears temporary, so another attempt may succeed.",
+            "source": "RULE_ENGINE"
         }
 
     # -----------------------------
@@ -38,7 +44,8 @@ def diagnose_failure(
             "confidence": 0.94,
             "recommended_action": "REMIND_LATER",
             "reasoning":
-                "Immediate retry is unlikely to succeed because the customer may not have sufficient balance."
+                "Immediate retry is unlikely to succeed because the customer may not have sufficient balance.",
+            "source": "RULE_ENGINE"
         }
 
     # -----------------------------
@@ -56,7 +63,8 @@ def diagnose_failure(
             "recommended_action":
                 "SUGGEST_ALTERNATE_METHOD",
             "reasoning":
-                "The selected payment method appears to have reached a transaction limit."
+                "The selected payment method appears to have reached a transaction limit.",
+            "source": "RULE_ENGINE"
         }
 
     # -----------------------------
@@ -73,7 +81,9 @@ def diagnose_failure(
             "confidence": 0.90,
             "recommended_action": "REMIND_LATER",
             "reasoning":
-                "The payment was cancelled by the customer, so an immediate retry should not be forced."
+                "The payment was cancelled by the customer, so an immediate retry should not be forced.",
+            "source": "RULE_ENGINE"
+            
         }
 
     # -----------------------------
@@ -90,7 +100,8 @@ def diagnose_failure(
             "recommended_action":
                 "SUGGEST_ALTERNATE_METHOD",
             "reasoning":
-                "The card payment failed, so another payment method may improve recovery."
+                "The card payment failed, so another payment method may improve recovery.",
+            "source": "RULE_ENGINE"
         }
 
     # -----------------------------
@@ -103,7 +114,8 @@ def diagnose_failure(
             "confidence": 0.98,
             "recommended_action": "STOP_RECOVERY",
             "reasoning":
-                "The payment has already failed multiple times and further automatic attempts should stop."
+                "The payment has already failed multiple times and further automatic attempts should stop.",
+            "source": "RULE_ENGINE"
         }
 
     # -----------------------------
@@ -115,5 +127,38 @@ def diagnose_failure(
         "confidence": 0.60,
         "recommended_action": "ESCALATE",
         "reasoning":
-            "The failure could not be classified confidently and should be escalated for review."
+            "The failure could not be classified confidently and should be escalated for review.",
+        "source": "RULE_ENGINE"
     }
+def get_recovery_decision(
+    amount: float,
+    failure_reason: str | None,
+    method: str | None,
+    attempt_number: int
+):
+    # ----------------------------------------
+    # STEP 1: Try AI
+    # ----------------------------------------
+
+    ai_result = analyze_payment_with_ai(
+        amount=amount,
+        method=method,
+        failure_reason=failure_reason,
+        attempt_number=attempt_number
+    )
+
+    if ai_result:
+        return ai_result
+
+
+    # ----------------------------------------
+    # STEP 2: Fallback to deterministic rules
+    # ----------------------------------------
+
+    rule_result = diagnose_failure(
+        failure_reason=failure_reason,
+        method=method,
+        attempt_number=attempt_number
+    )
+
+    return rule_result

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
+import os
 from app.database.database import get_db
 
 from app.models.models import (
@@ -15,10 +15,10 @@ from app.schemas.recovery_schema import (
     RecoveryRequest
 )
 
-from app.services.recovery_engine import (
-    diagnose_failure
-)
 
+from app.services.recovery_engine import (
+    get_recovery_decision
+)
 from app.services.policy_engine import (
     evaluate_recovery_policy
 )
@@ -67,11 +67,12 @@ def analyze_recovery(
     # STEP 3: Diagnose failure
     # -----------------------------------------
 
-    decision = diagnose_failure(
-        failure_reason=payment.failure_reason,
-        method=payment.method,
-        attempt_number=payment.attempt_number
-    )
+    decision = get_recovery_decision(
+    amount=float(payment.amount),
+    failure_reason=payment.failure_reason,
+    method=payment.method,
+    attempt_number=payment.attempt_number
+)
 
     # -----------------------------------------
     # STEP 4: Save AI-style decision
@@ -94,15 +95,18 @@ def analyze_recovery(
     # -----------------------------------------
 
     policy = evaluate_recovery_policy(
-        recommended_action=
-            decision["recommended_action"],
+    recommended_action=
+        decision["recommended_action"],
 
-        attempt_number=
-            payment.attempt_number,
+    attempt_number=
+        payment.attempt_number,
 
-        amount=
-            float(payment.amount)
-    )
+    amount=
+        float(payment.amount),
+
+    confidence=
+        float(decision["confidence"])
+)
 
     policy_decision = PolicyDecision(
         ai_decision_id=ai_decision.id,
@@ -121,46 +125,83 @@ def analyze_recovery(
         event_type="RECOVERY_ANALYZED",
         actor="RECOVERY_ENGINE",
         details={
-            "diagnosis":
-                decision["diagnosis"],
+             "diagnosis":
+             decision["diagnosis"],
 
             "recommended_action":
-                decision["recommended_action"],
+            decision["recommended_action"],
 
             "confidence":
-                decision["confidence"],
+             decision["confidence"],
 
-            "policy_allowed":
-                policy["allowed"]
-        }
+             "decision_source":
+             decision.get(
+                "source",
+                "UNKNOWN"
+        ),
+
+        "policy_allowed":
+        policy["allowed"]
+    }
     )
+    
 
     db.add(audit_log)
 
     db.commit()
 
     return {
-        "payment_id":
-            payment.id,
+    "payment_id":
+        payment.id,
 
-        "diagnosis":
-            decision["diagnosis"],
+    "diagnosis":
+        decision["diagnosis"],
 
-        "confidence":
-            float(decision["confidence"]),
+    "confidence":
+        float(decision["confidence"]),
 
-        "recommended_action":
-            decision["recommended_action"],
+    "recommended_action":
+        decision["recommended_action"],
 
-        "reasoning":
-            decision["reasoning"],
+    "reasoning":
+        decision["reasoning"],
 
-        "policy_allowed":
-            policy["allowed"],
+    "decision_source":
+        decision.get(
+            "source",
+            "UNKNOWN"
+        ),
 
-        "policy_reason":
-            policy["reason"]
+    "policy_allowed":
+        policy["allowed"],
+
+    "policy_reason":
+        policy["reason"],
+
+    # ----------------------------------------
+    # EXPLAINABILITY INFORMATION
+    # ----------------------------------------
+
+    "explainability": {
+        "payment_failure":
+            payment.failure_reason,
+
+        "payment_method":
+            payment.method,
+
+        "attempt_number":
+            payment.attempt_number,
+
+        "amount":
+            float(payment.amount),
+
+        "decision_source":
+            decision.get(
+                "source",
+                "UNKNOWN"
+            )
     }
+}
 
 @router.post("/execute")
 def execute_recovery(
@@ -442,4 +483,23 @@ def mark_payment_recovered(
 
         "amount_recovered":
             float(payment.amount)
+    }
+
+@router.get("/ai-status")
+def get_ai_status():
+    api_key_exists = bool(
+        os.getenv("OPENAI_API_KEY")
+    )
+
+    return {
+        "ai_enabled":
+            api_key_exists,
+
+        "fallback_engine":
+            "RULE_ENGINE",
+
+        "status":
+            "READY"
+            if api_key_exists
+            else "FALLBACK_MODE"
     }

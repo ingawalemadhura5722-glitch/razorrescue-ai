@@ -11,6 +11,7 @@ import {
   getRecoveryQueue,
   getRecoveryMetrics,
   markPaymentRecovered,
+  getAIStatus,
 } from "./services/api";
 
 
@@ -35,6 +36,10 @@ function App() {
     successful_recoveries: 0,
     total_revenue_recovered: 0,
   });
+  const [aiStatus, setAIStatus] = useState({
+  ai_enabled: false,
+  status: "UNKNOWN",
+});
 
 
   // =========================================================
@@ -236,14 +241,25 @@ function App() {
   // INITIAL PAGE LOAD
   // =========================================================
 
+  const loadAIStatus = async () => {
+    try {
+      const response = await getAIStatus();
+      setAIStatus(response.data);
+    } catch (err) {
+      console.error(
+        "Could not load AI status:",
+        err
+      );
+    }
+  };
+
   useEffect(() => {
     loadPayments();
     loadRevenueAtRisk();
     loadRecoveryQueue();
     loadRecoveryMetrics();
+    loadAIStatus();
   }, []);
-
-
   // =========================================================
   // CREATE RAZORPAY ORDER + OPEN CHECKOUT
   // =========================================================
@@ -567,6 +583,33 @@ function App() {
         </p>
       </div>
 
+      {/* =================================================== */}
+      {/* AI ENGINE STATUS */}
+      {/* =================================================== */}
+
+      <div
+        style={{
+          padding: "20px",
+          marginTop: "20px",
+          border: "1px solid #ccc",
+          borderRadius: "8px",
+        }}
+      >
+        <h2>AI Engine</h2>
+
+        <p>
+          <strong>Status:</strong>{" "}
+          {aiStatus.status}
+        </p>
+
+        <p>
+          <strong>Mode:</strong>{" "}
+          {aiStatus.ai_enabled
+            ? "AI + Rule Fallback"
+            : "Rule Engine Only"}
+        </p>
+      </div>
+
 
       {/* =================================================== */}
       {/* RECOVERY METRICS */}
@@ -749,12 +792,20 @@ function App() {
             </strong>{" "}
             {recoveryDecision.diagnosis}
           </p>
+          <p>
+            <strong>
+            Decision Source:
+          </strong>{" "}
+           {recoveryDecision.decision_source}
+          </p>
 
           <p>
             <strong>
               Confidence:
             </strong>{" "}
-            {recoveryDecision.confidence}
+            {Math.round(
+              recoveryDecision.confidence * 100
+              )}%
           </p>
 
           <p>
@@ -1035,5 +1086,4 @@ function App() {
     </div>
   );
 }
-
 export default App;

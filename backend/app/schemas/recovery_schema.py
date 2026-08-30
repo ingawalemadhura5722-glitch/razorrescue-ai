@@ -15,6 +15,7 @@ class RecoveryDecisionResponse(BaseModel):
     reasoning: str
     policy_allowed: bool
     policy_reason: str
+    decision_source: str
 
 
 class RecoveryAttemptResponse(BaseModel):
