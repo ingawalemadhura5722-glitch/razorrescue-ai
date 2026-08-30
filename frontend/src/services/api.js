@@ -29,4 +29,31 @@ export const getRevenueAtRisk = () => {
 export const getAuditLogs = () => {
   return api.get("/api/audit/");
 };
+export const analyzeRecovery = (paymentId) => {
+  return api.post("/api/recovery/analyze", {
+    payment_id: paymentId,
+  });
+};
+
+export const executeRecovery = (paymentId) => {
+  return api.post("/api/recovery/execute", {
+    payment_id: paymentId,
+  });
+};
+
+export const getRecoveryQueue = () => {
+  return api.get("/api/recovery/queue");
+};
+
+export const getRecoveryMetrics = () => {
+  return api.get("/api/recovery/metrics");
+};
+
+export const markPaymentRecovered = (
+  paymentId
+) => {
+  return api.post(
+    `/api/recovery/${paymentId}/mark-recovered`
+  );
+};
 export default api;

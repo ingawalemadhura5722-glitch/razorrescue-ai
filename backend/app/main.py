@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.api.recovery import router as recovery_router
 from app.api.orders import router as orders_router
 from app.api.payments import router as payments_router
 from app.api.audit import router as audit_router
@@ -27,6 +27,7 @@ app.add_middleware(
 app.include_router(payments_router)
 app.include_router(orders_router)
 app.include_router(audit_router)
+app.include_router(recovery_router)
 
 @app.get("/")
 def home():

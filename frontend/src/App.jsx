@@ -6,23 +6,48 @@ import {
   verifyRazorpayPayment,
   storeFailedPayment,
   getRevenueAtRisk,
+  analyzeRecovery,
+  executeRecovery,
+  getRecoveryQueue,
+  getRecoveryMetrics,
+  markPaymentRecovered,
 } from "./services/api";
+
+
 function App() {
+  // =========================================================
+  // STATE
+  // =========================================================
+
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [paymentMessage, setPaymentMessage] = useState("");
+
   const [revenueAtRisk, setRevenueAtRisk] = useState(0);
   const [failedCount, setFailedCount] = useState(0);
-  // ----------------------------------------
-  // Load payments from PostgreSQL
-  // ----------------------------------------
+
+  const [recoveryQueue, setRecoveryQueue] = useState([]);
+  const [recoveryDecision, setRecoveryDecision] = useState(null);
+
+  const [recoveryMetrics, setRecoveryMetrics] = useState({
+    total_recovery_attempts: 0,
+    successful_recoveries: 0,
+    total_revenue_recovered: 0,
+  });
+
+
+  // =========================================================
+  // LOAD PAYMENTS
+  // =========================================================
+
   const loadPayments = async () => {
     try {
       setLoading(true);
       setError("");
 
       const response = await getPayments();
+
       setPayments(response.data);
     } catch (err) {
       console.error("Error loading payments:", err);
@@ -34,38 +59,204 @@ function App() {
       setLoading(false);
     }
   };
+
+
+  // =========================================================
+  // LOAD REVENUE AT RISK
+  // =========================================================
+
   const loadRevenueAtRisk = async () => {
-  try {
-    const response = await getRevenueAtRisk();
+    try {
+      const response = await getRevenueAtRisk();
 
-    setRevenueAtRisk(
-      response.data.revenue_at_risk
-    );
+      setRevenueAtRisk(
+        response.data.revenue_at_risk
+      );
 
-    setFailedCount(
-      response.data.failed_payment_count
-    );
-  } catch (err) {
-    console.error(
-      "Error loading revenue at risk:",
-      err
-    );
-  }
-};
+      setFailedCount(
+        response.data.failed_payment_count
+      );
+    } catch (err) {
+      console.error(
+        "Error loading revenue at risk:",
+        err
+      );
+    }
+  };
+
+
+  // =========================================================
+  // LOAD RECOVERY QUEUE
+  // =========================================================
+
+  const loadRecoveryQueue = async () => {
+    try {
+      const response = await getRecoveryQueue();
+
+      setRecoveryQueue(
+        response.data.payments
+      );
+    } catch (err) {
+      console.error(
+        "Could not load recovery queue:",
+        err
+      );
+    }
+  };
+
+
+  // =========================================================
+  // LOAD RECOVERY METRICS
+  // =========================================================
+
+  const loadRecoveryMetrics = async () => {
+    try {
+      const response = await getRecoveryMetrics();
+
+      setRecoveryMetrics(response.data);
+    } catch (err) {
+      console.error(
+        "Could not load recovery metrics:",
+        err
+      );
+    }
+  };
+
+
+  // =========================================================
+  // REFRESH DASHBOARD
+  // =========================================================
+
+  const refreshDashboard = async () => {
+    await Promise.all([
+      loadPayments(),
+      loadRevenueAtRisk(),
+      loadRecoveryQueue(),
+      loadRecoveryMetrics(),
+    ]);
+  };
+
+
+  // =========================================================
+  // ANALYZE FAILED PAYMENT
+  // =========================================================
+
+  const handleAnalyzeRecovery = async (paymentId) => {
+    try {
+      setError("");
+      setPaymentMessage("");
+
+      const response = await analyzeRecovery(paymentId);
+
+      setRecoveryDecision(response.data);
+
+      setPaymentMessage(
+        `Payment ${paymentId} analyzed successfully.`
+      );
+    } catch (err) {
+      console.error(
+        "Could not analyze payment:",
+        err
+      );
+
+      setError(
+        err.response?.data?.detail ||
+          "Could not analyze payment."
+      );
+    }
+  };
+
+
+  // =========================================================
+  // EXECUTE RECOVERY
+  // =========================================================
+
+  const handleExecuteRecovery = async (paymentId) => {
+    try {
+      setError("");
+      setPaymentMessage("");
+
+      const response = await executeRecovery(paymentId);
+
+      setPaymentMessage(
+        response.data?.message ||
+          "Recovery action executed successfully."
+      );
+
+      await refreshDashboard();
+    } catch (err) {
+      console.error(
+        "Could not execute recovery:",
+        err
+      );
+
+      setError(
+        err.response?.data?.detail ||
+          "Could not execute recovery."
+      );
+    }
+  };
+
+
+  // =========================================================
+  // MARK PAYMENT AS RECOVERED
+  // =========================================================
+
+  const handleMarkRecovered = async (paymentId) => {
+    try {
+      setError("");
+      setPaymentMessage("");
+
+      const response =
+        await markPaymentRecovered(paymentId);
+
+      setPaymentMessage(
+        response.data?.message ||
+          "Payment marked as recovered successfully."
+      );
+
+      setRecoveryDecision(null);
+
+      await refreshDashboard();
+    } catch (err) {
+      console.error(
+        "Could not mark payment as recovered:",
+        err
+      );
+
+      setError(
+        err.response?.data?.detail ||
+          "Could not mark payment as recovered."
+      );
+    }
+  };
+
+
+  // =========================================================
+  // INITIAL PAGE LOAD
+  // =========================================================
+
   useEffect(() => {
     loadPayments();
     loadRevenueAtRisk();
+    loadRecoveryQueue();
+    loadRecoveryMetrics();
   }, []);
 
-  // ----------------------------------------
-  // Create Razorpay Order + Open Checkout
-  // ----------------------------------------
+
+  // =========================================================
+  // CREATE RAZORPAY ORDER + OPEN CHECKOUT
+  // =========================================================
+
   const handleCreateOrder = async () => {
     try {
       setError("");
       setPaymentMessage("");
 
+      // -----------------------------------------------------
       // Create Razorpay order through FastAPI
+      // -----------------------------------------------------
+
       const response = await createRazorpayOrder({
         amount: 499,
         receipt: `razorrescue_${Date.now()}`,
@@ -78,15 +269,24 @@ function App() {
         order
       );
 
+
+      // -----------------------------------------------------
       // Check Razorpay Checkout script
+      // -----------------------------------------------------
+
       if (!window.Razorpay) {
         setError(
           "Razorpay Checkout could not load. Please refresh the page."
         );
+
         return;
       }
 
+
+      // -----------------------------------------------------
       // Get Razorpay Key ID
+      // -----------------------------------------------------
+
       const razorpayKey =
         import.meta.env.VITE_RAZORPAY_KEY_ID;
 
@@ -94,12 +294,15 @@ function App() {
         setError(
           "Razorpay Key ID is missing from frontend .env file."
         );
+
         return;
       }
 
-      // ----------------------------------------
-      // Razorpay Checkout configuration
-      // ----------------------------------------
+
+      // =====================================================
+      // RAZORPAY CHECKOUT CONFIGURATION
+      // =====================================================
+
       const options = {
         key: razorpayKey,
 
@@ -114,42 +317,49 @@ function App() {
 
         order_id: order.id,
 
-        // ----------------------------------------
-        // SUCCESS HANDLER
-        // ----------------------------------------
-        handler: async function (
-          paymentResponse
-        ) {
+
+        // ===================================================
+        // PAYMENT SUCCESS HANDLER
+        // ===================================================
+
+        handler: async function (paymentResponse) {
           try {
             console.log(
               "Payment response received:",
               paymentResponse
             );
 
-            // Send Razorpay response to FastAPI
-            // for secure signature verification
+            // -------------------------------------------------
+            // Send payment information to FastAPI
+            // -------------------------------------------------
+
             const verificationResponse =
               await verifyRazorpayPayment({
-                 razorpay_order_id:
-      paymentResponse.razorpay_order_id,
+                razorpay_order_id:
+                  paymentResponse.razorpay_order_id,
 
-    razorpay_payment_id:
-      paymentResponse.razorpay_payment_id,
+                razorpay_payment_id:
+                  paymentResponse.razorpay_payment_id,
 
-    razorpay_signature:
-      paymentResponse.razorpay_signature,
+                razorpay_signature:
+                  paymentResponse.razorpay_signature,
 
-    local_order_id: 1,
+                // Day 3 demo order
+                local_order_id: 1,
 
-    amount: 499,
-  });
+                amount: 499,
+              });
 
             console.log(
               "Verification response:",
               verificationResponse.data
             );
 
-            // Only show success after backend verifies
+
+            // -------------------------------------------------
+            // Only show success after backend verification
+            // -------------------------------------------------
+
             if (
               verificationResponse.data.verified
             ) {
@@ -158,6 +368,8 @@ function App() {
               );
 
               setError("");
+
+              await refreshDashboard();
             }
           } catch (err) {
             console.error(
@@ -174,9 +386,11 @@ function App() {
           }
         },
 
-        // ----------------------------------------
-        // Test Customer Details
-        // ----------------------------------------
+
+        // ===================================================
+        // TEST CUSTOMER DETAILS
+        // ===================================================
+
         prefill: {
           name: "Test Customer",
           email: "test@example.com",
@@ -192,80 +406,100 @@ function App() {
         },
       };
 
-      // Create Razorpay Checkout object
+
+      // =====================================================
+      // CREATE RAZORPAY CHECKOUT OBJECT
+      // =====================================================
+
       const razorpay =
         new window.Razorpay(options);
 
-      // ----------------------------------------
+
+      // =====================================================
       // PAYMENT FAILURE HANDLER
-      // ----------------------------------------
-razorpay.on(
-  "payment.failed",
-  async function (response) {
-    try {
-      console.error(
-        "Payment failed:",
-        response.error
+      // =====================================================
+
+      razorpay.on(
+        "payment.failed",
+        async function (failureResponse) {
+          try {
+            console.error(
+              "Payment failed:",
+              failureResponse.error
+            );
+
+            const failureReason =
+              failureResponse.error?.description ||
+              "Payment could not be completed.";
+
+            const failureCode =
+              failureResponse.error?.code ||
+              "UNKNOWN_ERROR";
+
+            const paymentId =
+              failureResponse.error?.metadata
+                ?.payment_id || null;
+
+            const razorpayOrderId =
+              failureResponse.error?.metadata
+                ?.order_id || order.id;
+
+
+            // -------------------------------------------------
+            // Store failed payment in PostgreSQL
+            // -------------------------------------------------
+
+            await storeFailedPayment({
+              local_order_id: 1,
+
+              amount: 499,
+
+              razorpay_order_id:
+                razorpayOrderId,
+
+              razorpay_payment_id:
+                paymentId,
+
+              method: "RAZORPAY",
+
+              failure_reason:
+                failureReason,
+
+              failure_code:
+                failureCode,
+            });
+
+
+            setPaymentMessage("");
+
+            setError(
+              `Payment Failed: ${failureReason}`
+            );
+
+
+            // -------------------------------------------------
+            // Refresh dashboard after failure
+            // -------------------------------------------------
+
+            await refreshDashboard();
+          } catch (err) {
+            console.error(
+              "Could not store failed payment:",
+              err
+            );
+
+            setError(
+              "Payment failed and could not be stored."
+            );
+          }
+        }
       );
 
-      const failureReason =
-        response.error?.description ||
-        "Payment could not be completed.";
 
-      const failureCode =
-        response.error?.code ||
-        "UNKNOWN_ERROR";
+      // =====================================================
+      // OPEN RAZORPAY CHECKOUT
+      // =====================================================
 
-      const paymentId =
-        response.error?.metadata?.payment_id ||
-        null;
-
-      const razorpayOrderId =
-        response.error?.metadata?.order_id ||
-        order.id;
-
-      await storeFailedPayment({
-        local_order_id: 1,
-        amount: 499,
-
-        razorpay_order_id:
-          razorpayOrderId,
-
-        razorpay_payment_id:
-          paymentId,
-
-        method: "RAZORPAY",
-
-        failure_reason:
-          failureReason,
-
-        failure_code:
-          failureCode,
-      });
-
-      setPaymentMessage("");
-
-      setError(
-        `Payment Failed: ${failureReason}`
-      );
-
-      await loadPayments();
-      await loadRevenueAtRisk();
-
-    } catch (err) {
-      console.error(
-        "Could not store failed payment:",
-        err
-      );
-
-      setError(
-        "Payment failed and could not be stored."
-      );
-    }
-  }
-);
-
-      // Open Razorpay Checkout
       razorpay.open();
     } catch (err) {
       console.error(
@@ -283,6 +517,11 @@ razorpay.on(
     }
   };
 
+
+  // =========================================================
+  // UI
+  // =========================================================
+
   return (
     <div
       style={{
@@ -292,46 +531,275 @@ razorpay.on(
         margin: "0 auto",
       }}
     >
+      {/* =================================================== */}
       {/* HEADER */}
+      {/* =================================================== */}
 
       <h1>RazorRescue AI</h1>
 
       <p>
         AI-powered Revenue Recovery Agent
       </p>
-      <div
-  style={{
-    marginTop: "20px",
-    padding: "20px",
-    border: "1px solid #ccc",
-    borderRadius: "8px",
-  }}
->
-  <h2>Revenue at Risk</h2>
 
-  <h3>
-    ₹{revenueAtRisk}
-  </h3>
-
-  <p>
-    Failed Payments: {failedCount}
-  </p>
-</div>
       <hr />
 
-      {/* PAYMENTS SECTION */}
 
-      <h2>Payments from PostgreSQL</h2>
+      {/* =================================================== */}
+      {/* REVENUE AT RISK */}
+      {/* =================================================== */}
 
-      <button onClick={loadPayments}>
-        Refresh Payments
-      </button>
+      <div
+        style={{
+          marginTop: "20px",
+          padding: "20px",
+          border: "1px solid #ccc",
+          borderRadius: "8px",
+        }}
+      >
+        <h2>Revenue at Risk</h2>
 
-      {loading && (
-        <p>Loading payments...</p>
+        <h3>
+          ₹{revenueAtRisk}
+        </h3>
+
+        <p>
+          Failed Payments: {failedCount}
+        </p>
+      </div>
+
+
+      {/* =================================================== */}
+      {/* RECOVERY METRICS */}
+      {/* =================================================== */}
+
+      <div
+        style={{
+          padding: "20px",
+          marginTop: "20px",
+          border: "1px solid #ccc",
+          borderRadius: "8px",
+        }}
+      >
+        <h2>Recovery Metrics</h2>
+
+        <p>
+          Total Attempts:{" "}
+          {
+            recoveryMetrics
+              .total_recovery_attempts
+          }
+        </p>
+
+        <p>
+          Successful Recoveries:{" "}
+          {
+            recoveryMetrics
+              .successful_recoveries
+          }
+        </p>
+
+        <p>
+          Revenue Recovered: ₹
+          {
+            recoveryMetrics
+              .total_revenue_recovered
+          }
+        </p>
+      </div>
+
+
+      {/* =================================================== */}
+      {/* RECOVERY QUEUE */}
+      {/* =================================================== */}
+
+      <hr
+        style={{
+          marginTop: "30px",
+        }}
+      />
+
+      <h2>Recovery Queue</h2>
+
+      {recoveryQueue.length === 0 && (
+        <p>
+          No recoverable payments.
+        </p>
       )}
 
+      {recoveryQueue.map((payment) => (
+        <div
+          key={payment.id}
+          style={{
+            padding: "15px",
+            marginBottom: "10px",
+            border: "1px solid #ccc",
+            borderRadius: "8px",
+          }}
+        >
+          <p>
+            <strong>
+              Payment ID:
+            </strong>{" "}
+            {payment.id}
+          </p>
+
+          <p>
+            <strong>
+              Amount:
+            </strong>{" "}
+            ₹{payment.amount}
+          </p>
+
+          <p>
+            <strong>
+              Method:
+            </strong>{" "}
+            {payment.method || "-"}
+          </p>
+
+          <p>
+            <strong>
+              Failure:
+            </strong>{" "}
+            {payment.failure_reason || "-"}
+          </p>
+
+          <p>
+            <strong>
+              Attempt:
+            </strong>{" "}
+            {payment.attempt_number}
+          </p>
+
+
+          {/* ANALYZE BUTTON */}
+
+          <button
+            onClick={() =>
+              handleAnalyzeRecovery(
+                payment.id
+              )
+            }
+          >
+            Analyze
+          </button>
+
+
+          {/* EXECUTE BUTTON */}
+
+          <button
+            onClick={() =>
+              handleExecuteRecovery(
+                payment.id
+              )
+            }
+            style={{
+              marginLeft: "10px",
+            }}
+          >
+            Execute Recovery
+          </button>
+
+
+          {/* MARK RECOVERED BUTTON */}
+
+          <button
+            onClick={() =>
+              handleMarkRecovered(
+                payment.id
+              )
+            }
+            style={{
+              marginLeft: "10px",
+            }}
+          >
+            Mark Recovered
+          </button>
+        </div>
+      ))}
+
+
+      {/* =================================================== */}
+      {/* RECOVERY DECISION */}
+      {/* =================================================== */}
+
+      {recoveryDecision && (
+        <div
+          style={{
+            padding: "20px",
+            marginTop: "20px",
+            border: "1px solid #999",
+            borderRadius: "8px",
+          }}
+        >
+          <h2>
+            Recovery Decision
+          </h2>
+
+          <p>
+            <strong>
+              Payment ID:
+            </strong>{" "}
+            {recoveryDecision.payment_id}
+          </p>
+
+          <p>
+            <strong>
+              Diagnosis:
+            </strong>{" "}
+            {recoveryDecision.diagnosis}
+          </p>
+
+          <p>
+            <strong>
+              Confidence:
+            </strong>{" "}
+            {recoveryDecision.confidence}
+          </p>
+
+          <p>
+            <strong>
+              Recommended Action:
+            </strong>{" "}
+            {
+              recoveryDecision
+                .recommended_action
+            }
+          </p>
+
+          <p>
+            <strong>
+              Reasoning:
+            </strong>{" "}
+            {recoveryDecision.reasoning}
+          </p>
+
+          <p>
+            <strong>
+              Policy:
+            </strong>{" "}
+
+            {recoveryDecision.policy_allowed
+              ? "Allowed"
+              : "Blocked"}
+          </p>
+
+          <p>
+            <strong>
+              Policy Reason:
+            </strong>{" "}
+            {
+              recoveryDecision
+                .policy_reason
+            }
+          </p>
+        </div>
+      )}
+
+
+      {/* =================================================== */}
       {/* ERROR MESSAGE */}
+      {/* =================================================== */}
 
       {error && (
         <div
@@ -339,14 +807,20 @@ razorpay.on(
             marginTop: "20px",
             padding: "12px",
             border: "1px solid red",
+            borderRadius: "8px",
           }}
         >
-          <strong>Error:</strong>{" "}
+          <strong>
+            Error:
+          </strong>{" "}
           {error}
         </div>
       )}
 
+
+      {/* =================================================== */}
       {/* SUCCESS MESSAGE */}
+      {/* =================================================== */}
 
       {paymentMessage && (
         <div
@@ -354,18 +828,57 @@ razorpay.on(
             marginTop: "20px",
             padding: "12px",
             border: "1px solid green",
+            borderRadius: "8px",
           }}
         >
-          ✅ {paymentMessage}
+          {paymentMessage}
         </div>
       )}
 
+
+      {/* =================================================== */}
+      {/* PAYMENTS FROM POSTGRESQL */}
+      {/* =================================================== */}
+
+      <hr
+        style={{
+          marginTop: "30px",
+        }}
+      />
+
+      <h2>
+        Payments from PostgreSQL
+      </h2>
+
+      <button
+        onClick={refreshDashboard}
+      >
+        Refresh Dashboard
+      </button>
+
+
+      {/* LOADING */}
+
+      {loading && (
+        <p>
+          Loading payments...
+        </p>
+      )}
+
+
+      {/* NO PAYMENTS */}
+
       {!loading &&
         payments.length === 0 && (
-          <p>No payments found.</p>
+          <p>
+            No payments found.
+          </p>
         )}
 
+
+      {/* =================================================== */}
       {/* PAYMENTS TABLE */}
+      {/* =================================================== */}
 
       {payments.length > 0 && (
         <div
@@ -380,20 +893,38 @@ razorpay.on(
             style={{
               borderCollapse:
                 "collapse",
+
               width: "100%",
             }}
           >
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Order ID</th>
-                <th>Amount</th>
-                <th>Status</th>
-                <th>Method</th>
+
+                <th>
+                  Order ID
+                </th>
+
+                <th>
+                  Amount
+                </th>
+
+                <th>
+                  Status
+                </th>
+
+                <th>
+                  Method
+                </th>
+
                 <th>
                   Failure Reason
                 </th>
-                <th>Attempt</th>
+
+                <th>
+                  Attempt
+                </th>
+
                 <th>
                   Razorpay Payment ID
                 </th>
@@ -403,13 +934,19 @@ razorpay.on(
             <tbody>
               {payments.map(
                 (payment) => (
-                  <tr key={payment.id}>
+                  <tr
+                    key={
+                      payment.id
+                    }
+                  >
                     <td>
                       {payment.id}
                     </td>
 
                     <td>
-                      {payment.order_id}
+                      {
+                        payment.order_id
+                      }
                     </td>
 
                     <td>
@@ -417,7 +954,9 @@ razorpay.on(
                     </td>
 
                     <td>
-                      {payment.status}
+                      {
+                        payment.status
+                      }
                     </td>
 
                     <td>
@@ -432,7 +971,8 @@ razorpay.on(
 
                     <td>
                       {
-                        payment.attempt_number
+                        payment
+                          .attempt_number
                       }
                     </td>
 
@@ -448,7 +988,10 @@ razorpay.on(
         </div>
       )}
 
-      {/* RAZORPAY SECTION */}
+
+      {/* =================================================== */}
+      {/* RAZORPAY TEST PAYMENT */}
+      {/* =================================================== */}
 
       <hr
         style={{
@@ -457,7 +1000,9 @@ razorpay.on(
         }}
       />
 
-      <h2>Razorpay Test Payment</h2>
+      <h2>
+        Razorpay Test Payment
+      </h2>
 
       <p>
         Create a ₹499 test order and
@@ -466,7 +1011,9 @@ razorpay.on(
       </p>
 
       <button
-        onClick={handleCreateOrder}
+        onClick={
+          handleCreateOrder
+        }
         style={{
           padding: "12px 20px",
           fontSize: "16px",
