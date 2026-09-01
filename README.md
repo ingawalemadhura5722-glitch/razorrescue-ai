@@ -56,3 +56,52 @@ The system measures:
 > are simulated on synthetic/test data.
 > No real customer payment is automatically
 > retried by the simulator.
+
+## Merchant Operations Dashboard
+
+RazorRescue AI provides a merchant-facing
+operations dashboard for monitoring failed
+payments and recovery activity.
+
+### Dashboard Capabilities
+
+- Revenue-at-risk monitoring
+- Simulated recovered-revenue metrics
+- Failed payment tracking
+- Search and filtering
+- AI/rule decision visibility
+- Confidence and reasoning display
+- Policy decision visibility
+- Manual review queue
+- Recovery attempt history
+- Payment recovery timeline
+- Audit event visibility
+- High-value transaction protection
+- Maximum automated recovery attempts
+- AI fallback through a deterministic rule engine
+
+### Safety Architecture
+
+The AI decision layer does not directly control
+payment execution.
+
+Every recommended action is evaluated by a
+deterministic policy engine before execution.
+
+Examples of policy controls include:
+
+- High-value transaction protection
+- Maximum retry attempts
+- Minimum decision confidence
+- Explicit action allow-list
+- Manual review escalation
+
+### Prototype Notice
+
+Recovery results displayed in the current
+prototype are deterministic simulations
+performed on synthetic/test payment data.
+
+The prototype does not claim that simulated
+revenue represents real production money
+recovered from customers.

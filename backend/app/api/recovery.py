@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import os
 from app.database.database import get_db
 
@@ -487,8 +488,11 @@ def mark_payment_recovered(
 
 @router.get("/ai-status")
 def get_ai_status():
+
     api_key_exists = bool(
-        os.getenv("OPENAI_API_KEY")
+        os.getenv(
+            "OPENAI_API_KEY"
+        )
     )
 
     return {
@@ -498,8 +502,245 @@ def get_ai_status():
         "fallback_engine":
             "RULE_ENGINE",
 
-        "status":
-            "READY"
+        "status": (
+            "AI_CONFIGURED"
             if api_key_exists
-            else "FALLBACK_MODE"
+            else
+            "FALLBACK_MODE"
+        )
+    }
+
+@router.get("/manual-review")
+def get_manual_review_queue(
+    db: Session = Depends(get_db)
+):
+    latest_decisions = (
+        db.query(
+            AIDecision.payment_id,
+            func.max(
+                AIDecision.id
+            ).label(
+                "latest_decision_id"
+            )
+        )
+        .group_by(
+            AIDecision.payment_id
+        )
+        .subquery()
+    )
+
+    rows = (
+        db.query(
+            Payment,
+            AIDecision,
+            PolicyDecision
+        )
+        .join(
+            latest_decisions,
+            Payment.id
+            == latest_decisions.c.payment_id
+        )
+        .join(
+            AIDecision,
+            AIDecision.id
+            == latest_decisions.c.latest_decision_id
+        )
+        .join(
+            PolicyDecision,
+            PolicyDecision.ai_decision_id
+            == AIDecision.id
+        )
+        .filter(
+            Payment.status == "FAILED",
+            PolicyDecision.allowed == False
+        )
+        .order_by(
+            Payment.created_at.desc()
+        )
+        .all()
+    )
+
+    return {
+        "count": len(rows),
+
+        "payments": [
+            {
+                "payment_id":
+                    payment.id,
+
+                "amount":
+                    float(payment.amount),
+
+                "method":
+                    payment.method,
+
+                "failure_reason":
+                    payment.failure_reason,
+
+                "attempt_number":
+                    payment.attempt_number,
+
+                "diagnosis":
+                    ai_decision.diagnosis,
+
+                "confidence":
+                    float(
+                        ai_decision.confidence
+                        or 0
+                    ),
+
+                "recommended_action":
+                    ai_decision.recommended_action,
+
+                "policy_reason":
+                    policy_decision.reason,
+
+                "created_at":
+                    payment.created_at,
+            }
+
+            for (
+                payment,
+                ai_decision,
+                policy_decision
+            )
+            in rows
+        ]
+    }
+
+@router.get("/{payment_id}/timeline")
+def get_recovery_timeline(
+    payment_id: int,
+    db: Session = Depends(get_db)
+):
+    payment = (
+        db.query(Payment)
+        .filter(Payment.id == payment_id)
+        .first()
+    )
+
+    if not payment:
+        raise HTTPException(
+            status_code=404,
+            detail="Payment not found"
+        )
+
+    ai_decisions = (
+        db.query(AIDecision)
+        .filter(AIDecision.payment_id == payment_id)
+        .order_by(AIDecision.id.asc())
+        .all()
+    )
+
+    recovery_attempts = (
+        db.query(RecoveryAttempt)
+        .filter(RecoveryAttempt.payment_id == payment_id)
+        .order_by(RecoveryAttempt.id.asc())
+        .all()
+    )
+
+    audit_logs = (
+        db.query(AuditLog)
+        .filter(AuditLog.payment_id == payment_id)
+        .order_by(AuditLog.id.asc())
+        .all()
+    )
+
+    decision_items = []
+
+    for decision in ai_decisions:
+
+        policy = (
+            db.query(PolicyDecision)
+            .filter(
+                PolicyDecision.ai_decision_id
+                == decision.id
+            )
+            .first()
+        )
+
+        decision_items.append({
+            "ai_decision_id": decision.id,
+            "diagnosis": decision.diagnosis,
+            "confidence": float(
+                decision.confidence or 0
+            ),
+            "recommended_action":
+                decision.recommended_action,
+            "reasoning":
+                decision.reasoning,
+            "created_at":
+                decision.created_at,
+            "policy": (
+                {
+                    "allowed":
+                        policy.allowed,
+                    "reason":
+                        policy.reason,
+                    "created_at":
+                        policy.created_at,
+                }
+                if policy
+                else None
+            )
+        })
+
+    return {
+        "payment": {
+            "id": payment.id,
+            "order_id": payment.order_id,
+            "amount": float(payment.amount),
+            "method": payment.method,
+            "status": payment.status,
+            "failure_reason":
+                payment.failure_reason,
+            "attempt_number":
+                payment.attempt_number,
+            "razorpay_payment_id":
+                payment.razorpay_payment_id,
+            "created_at":
+                payment.created_at,
+        },
+
+        "decisions":
+            decision_items,
+
+        "recovery_attempts": [
+            {
+                "id":
+                    attempt.id,
+                "action":
+                    attempt.action,
+                "status":
+                    attempt.status,
+                "attempt_number":
+                    attempt.attempt_number,
+                "amount_recovered":
+                    float(
+                        attempt.amount_recovered
+                        or 0
+                    ),
+                "created_at":
+                    attempt.created_at,
+            }
+            for attempt
+            in recovery_attempts
+        ],
+
+        "audit_logs": [
+            {
+                "id":
+                    log.id,
+                "event_type":
+                    log.event_type,
+                "actor":
+                    log.actor,
+                "details":
+                    log.details,
+                "created_at":
+                    log.created_at,
+            }
+            for log
+            in audit_logs
+        ]
     }

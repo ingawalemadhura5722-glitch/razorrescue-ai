@@ -14,6 +14,8 @@ import {
   getAIStatus,
   runBatchRecovery,
   getBatchMetrics,
+  getRecoveryTimeline,
+  getManualReviewQueue,
 } from "./services/api";
 
 
@@ -56,6 +58,44 @@ const [batchMetrics, setBatchMetrics] =
     remaining_failed_payments: 0,
     recovered_payments: 0,
   });
+
+  const [
+  selectedPayment,
+  setSelectedPayment
+] = useState(null);
+
+const [
+  paymentTimeline,
+  setPaymentTimeline
+] = useState(null);
+
+const [
+  timelineLoading,
+  setTimelineLoading
+] = useState(false);
+
+const [
+  manualReview,
+  setManualReview
+] = useState({
+  count: 0,
+  payments: [],
+});
+
+const [
+  searchTerm,
+  setSearchTerm
+] = useState("");
+
+const [
+  statusFilter,
+  setStatusFilter
+] = useState("ALL");
+
+const [
+  methodFilter,
+  setMethodFilter
+] = useState("ALL");
 
 
   // =========================================================
@@ -124,8 +164,34 @@ const [batchMetrics, setBatchMetrics] =
       );
     }
   };
+  const formatCurrency =
+  (value) => {
 
+    return new Intl.NumberFormat(
+      "en-IN",
+      {
+        style: "currency",
+        currency: "INR",
+        maximumFractionDigits: 0,
+      }
+    ).format(
+      Number(value || 0)
+    );
+  };
 
+  const formatDate =
+  (dateValue) => {
+
+    if (!dateValue) {
+      return "-";
+    }
+
+    return new Date(
+      dateValue
+    ).toLocaleString(
+      "en-IN"
+    );
+  };
   // =========================================================
   // LOAD RECOVERY METRICS
   // =========================================================
@@ -155,6 +221,7 @@ const [batchMetrics, setBatchMetrics] =
     loadRecoveryQueue(),
     loadRecoveryMetrics(),
     loadBatchMetrics(),
+    loadManualReview(),
     ]);
   };
 
@@ -324,6 +391,63 @@ const [batchMetrics, setBatchMetrics] =
       setBatchRunning(false);
     }
   };
+
+  const loadManualReview = async () => {
+  try {
+
+    const response =
+      await getManualReviewQueue();
+
+    setManualReview(
+      response.data
+    );
+
+  } catch (err) {
+
+    console.error(
+      "Could not load manual review queue:",
+      err
+    );
+  }
+};
+
+const handleViewTimeline =
+  async (paymentId) => {
+
+    try {
+
+      setTimelineLoading(true);
+      setSelectedPayment(
+        paymentId
+      );
+
+      const response =
+        await getRecoveryTimeline(
+          paymentId
+        );
+
+      setPaymentTimeline(
+        response.data
+      );
+
+    } catch (err) {
+
+      console.error(
+        "Could not load recovery timeline:",
+        err
+      );
+
+      setError(
+        "Could not load payment timeline."
+      );
+
+    } finally {
+
+      setTimelineLoading(false);
+
+    }
+  };
+
 useEffect(() => {
   loadPayments();
   loadRevenueAtRisk();
@@ -331,6 +455,7 @@ useEffect(() => {
   loadRecoveryMetrics();
   loadAIStatus();
   loadBatchMetrics();
+  loadManualReview();
 }, []);
   // =========================================================
   // CREATE RAZORPAY ORDER + OPEN CHECKOUT
@@ -607,6 +732,32 @@ useEffect(() => {
 
 
   // =========================================================
+  // FILTER PAYMENTS - DAY 6
+  // =========================================================
+
+  const filteredPayments = payments.filter((payment) => {
+    const matchesSearch =
+      String(payment.id).includes(searchTerm) ||
+      (payment.failure_reason || "")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
+
+    const matchesStatus =
+      statusFilter === "ALL" ||
+      payment.status === statusFilter;
+
+    const matchesMethod =
+      methodFilter === "ALL" ||
+      (payment.method || "").toUpperCase() === methodFilter;
+
+    return (
+      matchesSearch &&
+      matchesStatus &&
+      matchesMethod
+    );
+  });
+
+  // =========================================================
   // UI
   // =========================================================
 
@@ -625,9 +776,119 @@ useEffect(() => {
 
       <h1>RazorRescue AI</h1>
 
-      <p>
-        AI-powered Revenue Recovery Agent
-      </p>
+<p
+  style={{
+    marginTop: "4px",
+    marginBottom: "24px",
+    color: "#666",
+  }}
+>
+  AI-powered revenue recovery
+  operations dashboard
+</p>
+<div
+  style={{
+    display: "flex",
+    gap: "12px",
+    flexWrap: "wrap",
+    marginBottom: "20px",
+  }}
+>
+  <span
+    style={{
+      padding: "6px 12px",
+      border: "1px solid #ccc",
+      borderRadius: "20px",
+      fontSize: "13px",
+    }}
+  >
+    Environment: Test Mode
+  </span>
+
+  <span
+    style={{
+      padding: "6px 12px",
+      border: "1px solid #ccc",
+      borderRadius: "20px",
+      fontSize: "13px",
+    }}
+  >
+    Recovery: Demo Simulation
+  </span>
+
+  <span
+    style={{
+      padding: "6px 12px",
+      border: "1px solid #ccc",
+      borderRadius: "20px",
+      fontSize: "13px",
+    }}
+  >
+    AI: {aiStatus.status}
+  </span>
+</div>
+
+      {/* =================================================== */}
+      {/* SUMMARY METRICS GRID */}
+      {/* =================================================== */}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(200px, 1fr))",
+          gap: "16px",
+          marginBottom: "24px",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px",
+            border: "1px solid #ddd",
+            borderRadius: "10px",
+          }}
+        >
+          <small>Revenue at Risk</small>
+          <h2>₹{revenueAtRisk ?? 0}</h2>
+        </div>
+
+        <div
+          style={{
+            padding: "18px",
+            border: "1px solid #ddd",
+            borderRadius: "10px",
+          }}
+        >
+          <small>Simulated Recovered</small>
+          <h2>
+            ₹{batchMetrics.simulated_revenue_recovered ?? 0}
+          </h2>
+        </div>
+
+        <div
+          style={{
+            padding: "18px",
+            border: "1px solid #ddd",
+            borderRadius: "10px",
+          }}
+        >
+          <small>Failed Payments</small>
+          <h2>
+            {batchMetrics.remaining_failed_payments ?? 0}
+          </h2>
+        </div>
+
+        <div
+          style={{
+            padding: "18px",
+            border: "1px solid #ddd",
+            borderRadius: "10px",
+          }}
+        >
+          <small>Manual Review</small>
+          <h2>{manualReview.count ?? 0}</h2>
+        </div>
+      </div>
 
       <hr />
 
@@ -656,7 +917,7 @@ useEffect(() => {
       </div>
 
       {/* =================================================== */}
-      {/* AI ENGINE STATUS */}
+      {/* AI DECISION ENGINE */}
       {/* =================================================== */}
 
       <div
@@ -667,7 +928,7 @@ useEffect(() => {
           borderRadius: "8px",
         }}
       >
-        <h2>AI Engine</h2>
+        <h2>AI Decision Engine</h2>
 
         <p>
           <strong>Status:</strong>{" "}
@@ -675,10 +936,37 @@ useEffect(() => {
         </p>
 
         <p>
-          <strong>Mode:</strong>{" "}
+          <strong>Primary Engine:</strong>{" "}
           {aiStatus.ai_enabled
-            ? "AI + Rule Fallback"
-            : "Rule Engine Only"}
+            ? "AI Model"
+            : "Deterministic Rule Engine"}
+        </p>
+
+        <p>
+          <strong>Fallback Engine:</strong>{" "}
+          {aiStatus.fallback_engine || "RULE_ENGINE"}
+        </p>
+
+        <p
+          style={{
+            marginTop: "12px",
+            fontSize: "14px",
+            color: "#555",
+          }}
+        >
+          RazorRescue AI uses AI to analyze payment failures and
+          recommend recovery actions. If the AI service is unavailable,
+          the deterministic rule engine provides a fallback decision.
+        </p>
+
+        <p
+          style={{
+            fontSize: "14px",
+            color: "#555",
+          }}
+        >
+          Every recommended action is checked by the policy engine
+          before recovery execution.
         </p>
       </div>
 
@@ -1000,10 +1288,73 @@ useEffect(() => {
 
 
       {/* =================================================== */}
+      {/* SEARCH AND FILTERS - DAY 6 */}
+      {/* =================================================== */}
+
+      <div
+        style={{
+          display: "flex",
+          gap: "10px",
+          flexWrap: "wrap",
+          marginTop: "20px",
+          marginBottom: "16px",
+        }}
+      >
+        <input
+          type="text"
+          placeholder="Search payment ID or failure..."
+          value={searchTerm}
+          onChange={(e) =>
+            setSearchTerm(e.target.value)
+          }
+          style={{
+            padding: "10px",
+            minWidth: "240px",
+          }}
+        />
+
+        <select
+          value={statusFilter}
+          onChange={(e) =>
+            setStatusFilter(e.target.value)
+          }
+          style={{
+            padding: "10px",
+          }}
+        >
+          <option value="ALL">All Statuses</option>
+          <option value="FAILED">Failed</option>
+          <option value="RECOVERED">Recovered</option>
+          <option value="SUCCESS">Success</option>
+        </select>
+
+        <select
+          value={methodFilter}
+          onChange={(e) =>
+            setMethodFilter(e.target.value)
+          }
+          style={{
+            padding: "10px",
+          }}
+        >
+          <option value="ALL">All Methods</option>
+          <option value="UPI">UPI</option>
+          <option value="CARD">Card</option>
+          <option value="NETBANKING">Net Banking</option>
+        </select>
+      </div>
+
+      {!loading &&
+        payments.length > 0 &&
+        filteredPayments.length === 0 && (
+          <p>No payments match the selected filters.</p>
+        )}
+
+      {/* =================================================== */}
       {/* PAYMENTS TABLE */}
       {/* =================================================== */}
 
-      {payments.length > 0 && (
+      {filteredPayments.length > 0 && (
         <div
           style={{
             overflowX: "auto",
@@ -1051,11 +1402,13 @@ useEffect(() => {
                 <th>
                   Razorpay Payment ID
                 </th>
+
+                <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {payments.map(
+              {filteredPayments.map(
                 (payment) => (
                   <tr
                     key={
@@ -1103,6 +1456,16 @@ useEffect(() => {
                       {payment.razorpay_payment_id ||
                         "-"}
                     </td>
+
+                    <td>
+                      <button
+                        onClick={() =>
+                          handleViewTimeline(payment.id)
+                        }
+                      >
+                        View Timeline
+                      </button>
+                    </td>
                   </tr>
                 )
               )}
@@ -1110,6 +1473,233 @@ useEffect(() => {
           </table>
         </div>
       )}
+
+      {/* =================================================== */}
+      {/* RECOVERY TIMELINE */}
+      {/* =================================================== */}
+
+      {selectedPayment && (
+        <div
+          style={{
+            marginTop: "24px",
+            padding: "20px",
+            border: "1px solid #bbb",
+            borderRadius: "10px",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "12px",
+            }}
+          >
+            <h2>Recovery Timeline</h2>
+
+            <button
+              onClick={() => {
+                setSelectedPayment(null);
+                setPaymentTimeline(null);
+              }}
+            >
+              Close
+            </button>
+          </div>
+
+          {timelineLoading && <p>Loading timeline...</p>}
+
+          {!timelineLoading && paymentTimeline && (
+            <>
+              <h3>Payment #{paymentTimeline.payment.id}</h3>
+
+              <p>
+                <strong>Amount:</strong>{" "}
+                ₹{paymentTimeline.payment.amount}
+              </p>
+
+              <p>
+                <strong>Method:</strong>{" "}
+                {paymentTimeline.payment.method || "N/A"}
+              </p>
+
+              <p>
+                <strong>Failure:</strong>{" "}
+                {paymentTimeline.payment.failure_reason || "N/A"}
+              </p>
+
+              <p>
+                <strong>Status:</strong>{" "}
+                {paymentTimeline.payment.status}
+              </p>
+
+              <h3>Decision History</h3>
+
+              {paymentTimeline.decisions.length === 0 ? (
+                <p>No recovery analysis yet.</p>
+              ) : (
+                paymentTimeline.decisions.map((decision) => (
+                  <div
+                    key={decision.ai_decision_id}
+                    style={{
+                      padding: "14px",
+                      border: "1px solid #ddd",
+                      borderRadius: "8px",
+                      marginBottom: "12px",
+                    }}
+                  >
+                    <p>
+                      <strong>Diagnosis:</strong>{" "}
+                      {decision.diagnosis}
+                    </p>
+
+                    <p>
+                      <strong>Confidence:</strong>{" "}
+                      {(decision.confidence * 100).toFixed(0)}%
+                    </p>
+
+                    <p>
+                      <strong>Recommended Action:</strong>{" "}
+                      {decision.recommended_action}
+                    </p>
+
+                    <p>
+                      <strong>Reasoning:</strong>{" "}
+                      {decision.reasoning}
+                    </p>
+
+                    {decision.policy && (
+                      <>
+                        <p>
+                          <strong>Policy:</strong>{" "}
+                          {decision.policy.allowed
+                            ? "Allowed"
+                            : "Blocked"}
+                        </p>
+
+                        <p>
+                          <strong>Policy Reason:</strong>{" "}
+                          {decision.policy.reason}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                ))
+              )}
+
+              <h3>Recovery Attempts</h3>
+
+              {paymentTimeline.recovery_attempts.length === 0 ? (
+                <p>No recovery attempts recorded.</p>
+              ) : (
+                paymentTimeline.recovery_attempts.map((attempt) => (
+                  <div
+                    key={attempt.id}
+                    style={{
+                      padding: "12px",
+                      borderBottom: "1px solid #eee",
+                    }}
+                  >
+                    <strong>{attempt.action}</strong>
+                    <p>Status: {attempt.status}</p>
+                    <p>Attempt: {attempt.attempt_number}</p>
+                    <p>
+                      Simulated Recovered: ₹
+                      {attempt.amount_recovered}
+                    </p>
+                  </div>
+                ))
+              )}
+
+              <h3>Audit Events</h3>
+
+              {paymentTimeline.audit_logs.length === 0 ? (
+                <p>No audit events.</p>
+              ) : (
+                paymentTimeline.audit_logs.map((log) => (
+                  <div
+                    key={log.id}
+                    style={{
+                      padding: "10px 0",
+                      borderBottom: "1px solid #eee",
+                    }}
+                  >
+                    <strong>{log.event_type}</strong>
+                    <p>Actor: {log.actor}</p>
+                  </div>
+                ))
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* =================================================== */}
+      {/* MANUAL REVIEW QUEUE */}
+      {/* =================================================== */}
+
+      <div
+        style={{
+          marginTop: "24px",
+          padding: "20px",
+          border: "1px solid #ccc",
+          borderRadius: "10px",
+          overflowX: "auto",
+        }}
+      >
+        <h2>Manual Review Queue</h2>
+
+        <p>
+          Payments blocked from automatic recovery by policy.
+        </p>
+
+        <p>
+          <strong>Pending Reviews:</strong>{" "}
+          {manualReview.count}
+        </p>
+
+        {manualReview.payments.length === 0 ? (
+          <p>No payments currently require manual review.</p>
+        ) : (
+          <table
+            border="1"
+            cellPadding="10"
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+            }}
+          >
+            <thead>
+              <tr>
+                <th>Payment</th>
+                <th>Amount</th>
+                <th>Reason</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {manualReview.payments.map((payment) => (
+                <tr key={payment.payment_id}>
+                  <td>#{payment.payment_id}</td>
+                  <td>₹{payment.amount}</td>
+                  <td>{payment.policy_reason}</td>
+                  <td>
+                    <button
+                      onClick={() =>
+                        handleViewTimeline(payment.payment_id)
+                      }
+                    >
+                      Review
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       <div
   style={{
     padding: "20px",

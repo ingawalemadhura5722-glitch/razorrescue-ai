@@ -121,4 +121,17 @@ export const getBatchMetrics = () => {
   );
 };
 
+export const getRecoveryTimeline = (
+  paymentId
+) =>
+  api.get(
+    `/api/recovery/${paymentId}/timeline`
+  );
+
+export const getManualReviewQueue = () =>
+  api.get(
+    "/api/recovery/manual-review"
+  );
+
+  
 export default api;
