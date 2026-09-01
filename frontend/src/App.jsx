@@ -12,6 +12,8 @@ import {
   getRecoveryMetrics,
   markPaymentRecovered,
   getAIStatus,
+  runBatchRecovery,
+  getBatchMetrics,
 } from "./services/api";
 
 
@@ -40,6 +42,20 @@ function App() {
   ai_enabled: false,
   status: "UNKNOWN",
 });
+  const [batchResult, setBatchResult] =
+  useState(null);
+
+const [batchRunning, setBatchRunning] =
+  useState(false);
+
+const [batchMetrics, setBatchMetrics] =
+  useState({
+    total_recovery_attempts: 0,
+    successful_recoveries: 0,
+    simulated_revenue_recovered: 0,
+    remaining_failed_payments: 0,
+    recovered_payments: 0,
+  });
 
 
   // =========================================================
@@ -134,10 +150,11 @@ function App() {
 
   const refreshDashboard = async () => {
     await Promise.all([
-      loadPayments(),
-      loadRevenueAtRisk(),
-      loadRecoveryQueue(),
-      loadRecoveryMetrics(),
+    loadPayments(),
+    loadRevenueAtRisk(),
+    loadRecoveryQueue(),
+    loadRecoveryMetrics(),
+    loadBatchMetrics(),
     ]);
   };
 
@@ -252,14 +269,69 @@ function App() {
       );
     }
   };
+  const loadBatchMetrics = async () => {
+  try {
+    const response =
+      await getBatchMetrics();
 
-  useEffect(() => {
-    loadPayments();
-    loadRevenueAtRisk();
-    loadRecoveryQueue();
-    loadRecoveryMetrics();
-    loadAIStatus();
-  }, []);
+    setBatchMetrics(
+      response.data
+    );
+  } catch (err) {
+    console.error(
+      "Could not load batch metrics:",
+      err
+    );
+  }
+};
+  const handleRunBatchRecovery =
+  async () => {
+
+    try {
+
+      setBatchRunning(true);
+      setError("");
+      setPaymentMessage("");
+
+      const response =
+        await runBatchRecovery(50);
+
+      setBatchResult(
+        response.data
+      );
+
+      setPaymentMessage(
+        "Batch recovery simulation completed successfully."
+      );
+
+      await refreshDashboard();
+      await loadBatchMetrics();
+
+    } catch (err) {
+
+      console.error(
+        "Batch recovery failed:",
+        err
+      );
+
+      setError(
+        err.response?.data?.detail ||
+        "Could not run batch recovery."
+      );
+
+    } finally {
+
+      setBatchRunning(false);
+    }
+  };
+useEffect(() => {
+  loadPayments();
+  loadRevenueAtRisk();
+  loadRecoveryQueue();
+  loadRecoveryMetrics();
+  loadAIStatus();
+  loadBatchMetrics();
+}, []);
   // =========================================================
   // CREATE RAZORPAY ORDER + OPEN CHECKOUT
   // =========================================================
@@ -1038,7 +1110,185 @@ function App() {
           </table>
         </div>
       )}
+      <div
+  style={{
+    padding: "20px",
+    marginTop: "20px",
+    border: "1px solid #ccc",
+    borderRadius: "8px",
+  }}
+>
+  <h2>
+    Batch Revenue Recovery
+  </h2>
 
+  <p>
+    Analyze and simulate bounded
+    recovery across failed payments.
+  </p>
+
+  <button
+    onClick={
+      handleRunBatchRecovery
+    }
+    disabled={batchRunning}
+  >
+    {batchRunning
+      ? "Running Batch..."
+      : "Run 50-Payment Recovery Batch"}
+  </button>
+
+  <p
+    style={{
+      marginTop: "10px",
+      fontSize: "13px",
+    }}
+  >
+    Demo simulation only — no real
+    payment retries are performed.
+  </p>
+</div>
+{batchResult && (
+  <div
+    style={{
+      padding: "20px",
+      marginTop: "20px",
+      border: "1px solid #999",
+      borderRadius: "8px",
+    }}
+  >
+    <h2>
+      Latest Batch Result
+    </h2>
+
+    <p>
+      <strong>
+        Payments Processed:
+      </strong>{" "}
+      {batchResult.total_processed}
+    </p>
+
+    <p>
+      <strong>
+        Recovered:
+      </strong>{" "}
+      {batchResult.recovered_count}
+    </p>
+
+    <p>
+      <strong>
+        Pending:
+      </strong>{" "}
+      {batchResult.pending_count}
+    </p>
+
+    <p>
+      <strong>
+        Escalated:
+      </strong>{" "}
+      {batchResult.escalated_count}
+    </p>
+
+    <p>
+      <strong>
+        Blocked:
+      </strong>{" "}
+      {batchResult.blocked_count}
+    </p>
+
+    <p>
+      <strong>
+        Revenue at Risk:
+      </strong>{" "}
+      ₹
+      {
+        batchResult
+          .total_revenue_at_risk
+      }
+    </p>
+
+    <p>
+      <strong>
+        Simulated Revenue Recovered:
+      </strong>{" "}
+      ₹
+      {
+        batchResult
+          .total_revenue_recovered
+      }
+    </p>
+
+    <p>
+      <strong>
+        Recovery Rate:
+      </strong>{" "}
+      {batchResult.recovery_rate}%
+    </p>
+  </div>
+)}
+<div
+  style={{
+    padding: "20px",
+    marginTop: "20px",
+    border: "1px solid #ccc",
+    borderRadius: "8px",
+  }}
+>
+  <h2>
+    Recovery Analytics
+  </h2>
+
+  <p>
+    <strong>
+      Total Attempts:
+    </strong>{" "}
+    {
+      batchMetrics
+        .total_recovery_attempts
+    }
+  </p>
+
+  <p>
+    <strong>
+      Successful Recoveries:
+    </strong>{" "}
+    {
+      batchMetrics
+        .successful_recoveries
+    }
+  </p>
+
+  <p>
+    <strong>
+      Simulated Revenue Recovered:
+    </strong>{" "}
+    ₹
+    {
+      batchMetrics
+        .simulated_revenue_recovered
+    }
+  </p>
+
+  <p>
+    <strong>
+      Remaining Failed:
+    </strong>{" "}
+    {
+      batchMetrics
+        .remaining_failed_payments
+    }
+  </p>
+
+  <p>
+    <strong>
+      Recovered Payments:
+    </strong>{" "}
+    {
+      batchMetrics
+        .recovered_payments
+    }
+  </p>
+</div>
 
       {/* =================================================== */}
       {/* RAZORPAY TEST PAYMENT */}

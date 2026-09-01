@@ -4,7 +4,9 @@ from app.api.recovery import router as recovery_router
 from app.api.orders import router as orders_router
 from app.api.payments import router as payments_router
 from app.api.audit import router as audit_router
-
+from app.api.batch_recovery import (
+    router as batch_recovery_router
+)
 app = FastAPI(
     title="RazorRescue AI",
     description="AI-powered Revenue Recovery Agent",
@@ -30,7 +32,7 @@ app.include_router(payments_router)
 app.include_router(orders_router)
 app.include_router(audit_router)
 app.include_router(recovery_router)
-
+app.include_router(batch_recovery_router)
 @app.get("/")
 def home():
     return {

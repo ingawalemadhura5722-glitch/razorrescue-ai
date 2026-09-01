@@ -103,6 +103,22 @@ export const getAuditLogs = () => {
     "/api/audit/"
   );
 };
+export const runBatchRecovery = (
+  limit = 50
+) => {
+  return api.post(
+    "/api/batch-recovery/run",
+    {
+      limit: limit,
+    }
+  );
+};
 
+
+export const getBatchMetrics = () => {
+  return api.get(
+    "/api/batch-recovery/metrics"
+  );
+};
 
 export default api;
