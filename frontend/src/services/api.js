@@ -133,5 +133,6 @@ export const getManualReviewQueue = () =>
     "/api/recovery/manual-review"
   );
 
-  
+  export const getSystemStatus = () =>
+  api.get("/system-status");
 export default api;

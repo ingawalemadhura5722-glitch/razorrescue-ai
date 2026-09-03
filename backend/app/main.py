@@ -4,6 +4,9 @@ from app.api.recovery import router as recovery_router
 from app.api.orders import router as orders_router
 from app.api.payments import router as payments_router
 from app.api.audit import router as audit_router
+from sqlalchemy import text
+import os
+from app.database.database import engine
 from app.api.batch_recovery import (
     router as batch_recovery_router
 )
@@ -39,9 +42,42 @@ def home():
         "message": "RazorRescue AI backend is running"
     }
 
+@app.get("/system-status")
+def system_status():
 
+    return {
+        "backend": "ONLINE",
+        "database": "POSTGRESQL",
+        "payment_gateway":
+            "RAZORPAY_TEST_MODE",
+        "ai_configured": bool(
+            os.getenv("OPENAI_API_KEY")
+        ),
+        "fallback_engine":
+            "RULE_ENGINE",
+        "recovery_mode":
+            "DEMO_SIMULATION"
+    }
 @app.get("/health")
 def health():
-    return {
-        "status": "healthy"
-    }
+
+    try:
+
+        with engine.connect() as connection:
+
+            connection.execute(
+                text("SELECT 1")
+            )
+
+        return {
+            "status": "healthy",
+            "database": "connected"
+        }
+
+    except Exception as exc:
+
+        return {
+            "status": "degraded",
+            "database": "unavailable",
+            "error": str(exc)
+        }

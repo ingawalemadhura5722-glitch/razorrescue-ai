@@ -16,6 +16,7 @@ import {
   getBatchMetrics,
   getRecoveryTimeline,
   getManualReviewQueue,
+  getSystemStatus,
 } from "./services/api";
 
 
@@ -58,7 +59,10 @@ const [batchMetrics, setBatchMetrics] =
     remaining_failed_payments: 0,
     recovered_payments: 0,
   });
-  
+  const [
+  systemStatus,
+  setSystemStatus
+] = useState(null);
   const [
   selectedPayment,
   setSelectedPayment
@@ -164,20 +168,16 @@ const [
       );
     }
   };
-  const formatCurrency =
-  (value) => {
+  const formatCurrency = (amount) => {
+    const value = Number(amount || 0);
 
-    return new Intl.NumberFormat(
-      "en-IN",
-      {
-        style: "currency",
-        currency: "INR",
-        maximumFractionDigits: 0,
-      }
-    ).format(
-      Number(value || 0)
-    );
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(value);
   };
+
   
   const formatDate =
   (dateValue) => {
@@ -222,6 +222,7 @@ const [
     loadRecoveryMetrics(),
     loadBatchMetrics(),
     loadManualReview(),
+    loadSystemStatus(),
     ]);
   };
 
@@ -411,43 +412,50 @@ const [
   }
 };
 
-const handleViewTimeline =
-  async (paymentId) => {
+const handleViewTimeline = async (paymentId) => {
+  try {
+    setTimelineLoading(true);
+    setSelectedPayment(paymentId);
+    setError("");
 
-    try {
+    const response =
+      await getRecoveryTimeline(paymentId);
 
-      setTimelineLoading(true);
-      setSelectedPayment(
-        paymentId
-      );
+    setPaymentTimeline(response.data);
 
-      const response =
-        await getRecoveryTimeline(
-          paymentId
-        );
+  } catch (err) {
+    console.error(
+      "Could not load recovery timeline:",
+      err
+    );
 
-      setPaymentTimeline(
-        response.data
-      );
+    setError(
+      err.response?.data?.detail ||
+      "Could not load payment timeline."
+    );
 
-    } catch (err) {
+  } finally {
+    setTimelineLoading(false);
+  }
+};
+const loadSystemStatus = async () => {
+  try {
 
-      console.error(
-        "Could not load recovery timeline:",
-        err
-      );
+    const response =
+      await getSystemStatus();
 
-      setError(
-        "Could not load payment timeline."
-      );
+    setSystemStatus(
+      response.data
+    );
 
-    } finally {
+  } catch (err) {
 
-      setTimelineLoading(false);
-
-    }
-  };
-
+    console.error(
+      "Could not load system status:",
+      err
+    );
+  }
+};
 useEffect(() => {
   loadPayments();
   loadRevenueAtRisk();
@@ -456,6 +464,7 @@ useEffect(() => {
   loadAIStatus();
   loadBatchMetrics();
   loadManualReview();
+  loadSystemStatus();
 }, []);
   // =========================================================
   // CREATE RAZORPAY ORDER + OPEN CHECKOUT
@@ -756,10 +765,35 @@ useEffect(() => {
       matchesMethod
     );
   });
+const formatDateTime = (dateValue) => {
+  if (!dateValue) {
+    return "-";
+  }
 
+  return new Date(dateValue).toLocaleString(
+    "en-IN",
+    {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }
+  );
+};
   // =========================================================
   // UI
   // =========================================================
+const getStatusLabel = (status) => {
+  const labels = {
+    FAILED: "Failed",
+    SUCCESS: "Successful",
+    RECOVERED: "Recovered",
+    PENDING: "Pending",
+    BLOCKED: "Blocked",
+    ESCALATED: "Escalated",
+    STOPPED: "Stopped",
+  };
+
+  return labels[status] || status || "Unknown";
+};
 
   return (
     <div
@@ -827,7 +861,30 @@ useEffect(() => {
     AI: {aiStatus.status}
   </span>
 </div>
+<div
+  style={{
+    padding: "14px",
+    marginBottom: "20px",
+    border: "1px solid #ccc",
+    borderRadius: "8px",
+    background: "#fafafa",
+  }}
+>
+  <strong>Prototype Mode</strong>
 
+  <p
+    style={{
+      marginBottom: 0,
+      marginTop: "6px",
+      fontSize: "14px",
+    }}
+  >
+    Recovery outcomes displayed in this dashboard
+    are deterministic simulations performed on
+    synthetic/test payment data. No real customer
+    payment is automatically retried.
+  </p>
+</div>
       {/* =================================================== */}
       {/* SUMMARY METRICS GRID */}
       {/* =================================================== */}
@@ -974,7 +1031,50 @@ useEffect(() => {
         </p>
       </div>
 
+{systemStatus && (
+  <div
+    style={{
+      padding: "20px",
+      marginTop: "20px",
+      border: "1px solid #ccc",
+      borderRadius: "10px",
+    }}
+  >
+    <h2>System Status</h2>
 
+    <p>
+      <strong>Backend:</strong>{" "}
+      {systemStatus.backend}
+    </p>
+
+    <p>
+      <strong>Database:</strong>{" "}
+      {systemStatus.database}
+    </p>
+
+    <p>
+      <strong>Payment Gateway:</strong>{" "}
+      {systemStatus.payment_gateway}
+    </p>
+
+    <p>
+      <strong>AI Configured:</strong>{" "}
+      {systemStatus.ai_configured
+        ? "Yes"
+        : "No"}
+    </p>
+
+    <p>
+      <strong>Fallback Engine:</strong>{" "}
+      {systemStatus.fallback_engine}
+    </p>
+
+    <p>
+      <strong>Recovery Mode:</strong>{" "}
+      {systemStatus.recovery_mode}
+    </p>
+  </div>
+)}
       {/* =================================================== */}
       {/* RECOVERY METRICS */}
       {/* =================================================== */}
@@ -1006,11 +1106,10 @@ useEffect(() => {
         </p>
 
         <p>
-          Revenue Recovered: ₹
-          {
-            recoveryMetrics
-              .total_revenue_recovered
-          }
+          Revenue Recovered:{" "}
+          {formatCurrency(
+            recoveryMetrics.total_revenue_recovered
+          )}
         </p>
       </div>
 
@@ -1054,7 +1153,7 @@ useEffect(() => {
             <strong>
               Amount:
             </strong>{" "}
-            ₹{payment.amount}
+            {formatCurrency(payment.amount)}
           </p>
 
           <p>
@@ -1435,7 +1534,7 @@ useEffect(() => {
 
                     <td>
                       {
-                        payment.status
+                        getStatusLabel(payment.status)
                       }
                     </td>
 
@@ -1519,7 +1618,7 @@ useEffect(() => {
 
               <p>
                 <strong>Amount:</strong>{" "}
-                ₹{paymentTimeline.payment.amount}
+                {formatCurrency(paymentTimeline.payment.amount)}
               </p>
 
               <p>
@@ -1534,11 +1633,10 @@ useEffect(() => {
 
               <p>
                 <strong>Status:</strong>{" "}
-                {paymentTimeline.payment.status}
+                {getStatusLabel(paymentTimeline.payment.status)}
               </p>
 
               <h3>Decision History</h3>
-
               {paymentTimeline.decisions.length === 0 ? (
                 <p>No recovery analysis yet.</p>
               ) : (
@@ -1572,6 +1670,11 @@ useEffect(() => {
                       {decision.reasoning}
                     </p>
 
+                    <p>
+                      <strong>Decision Time:</strong>{" "}
+                      {formatDateTime(decision.created_at)}
+                    </p>
+
                     {decision.policy && (
                       <>
                         <p>
@@ -1592,7 +1695,6 @@ useEffect(() => {
               )}
 
               <h3>Recovery Attempts</h3>
-
               {paymentTimeline.recovery_attempts.length === 0 ? (
                 <p>No recovery attempts recorded.</p>
               ) : (
@@ -1605,18 +1707,22 @@ useEffect(() => {
                     }}
                   >
                     <strong>{attempt.action}</strong>
-                    <p>Status: {attempt.status}</p>
+                    <p>Status: {getStatusLabel(attempt.status)}</p>
                     <p>Attempt: {attempt.attempt_number}</p>
                     <p>
-                      Simulated Recovered: ₹
-                      {attempt.amount_recovered}
+                      Simulated Recovered:{" "}
+                      {formatCurrency(attempt.amount_recovered)}
+                    </p>
+
+                    <p>
+                      <strong>Attempt Time:</strong>{" "}
+                      {formatDateTime(attempt.created_at)}
                     </p>
                   </div>
                 ))
               )}
 
               <h3>Audit Events</h3>
-
               {paymentTimeline.audit_logs.length === 0 ? (
                 <p>No audit events.</p>
               ) : (
@@ -1630,6 +1736,11 @@ useEffect(() => {
                   >
                     <strong>{log.event_type}</strong>
                     <p>Actor: {log.actor}</p>
+
+                    <p>
+                      <strong>Time:</strong>{" "}
+                      {formatDateTime(log.created_at)}
+                    </p>
                   </div>
                 ))
               )}
@@ -1675,31 +1786,63 @@ useEffect(() => {
           >
             <thead>
               <tr>
-                <th>Payment</th>
-                <th>Amount</th>
-                <th>Reason</th>
-                <th>Action</th>
+              <th>Payment</th>
+              <th>Amount</th>
+              <th>Method</th>
+              <th>Failure</th>
+              <th>Recommended Action</th>
+              <th>Policy Reason</th>
+              <th>Review</th>
               </tr>
             </thead>
 
-            <tbody>
-              {manualReview.payments.map((payment) => (
-                <tr key={payment.payment_id}>
-                  <td>#{payment.payment_id}</td>
-                  <td> {formatCurrency(payment.amount)}</td>
-                  <td>{payment.policy_reason}</td>
-                  <td>
-                    <button
-                      onClick={() =>
-                        handleViewTimeline(payment.payment_id)
-                      }
-                    >
-                      Review
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+<tbody>
+  {manualReview.payments.map(
+    (payment) => (
+      <tr key={payment.payment_id}>
+
+        <td>
+          #{payment.payment_id}
+        </td>
+
+        <td>
+          {formatCurrency(
+            payment.amount
+          )}
+        </td>
+
+        <td>
+          {payment.method || "-"}
+        </td>
+
+        <td>
+          {payment.failure_reason || "-"}
+        </td>
+
+        <td>
+          {payment.recommended_action}
+        </td>
+
+        <td>
+          {payment.policy_reason}
+        </td>
+
+        <td>
+          <button
+            onClick={() =>
+              handleViewTimeline(
+                payment.payment_id
+              )
+            }
+          >
+            Review
+          </button>
+        </td>
+
+      </tr>
+    )
+  )}
+</tbody>
           </table>
         )}
       </div>
@@ -1794,22 +1937,18 @@ useEffect(() => {
       <strong>
         Revenue at Risk:
       </strong>{" "}
-      ₹
-      {
-        batchResult
-          .total_revenue_at_risk
-      }
+      {formatCurrency(
+        batchResult.total_revenue_at_risk
+      )}
     </p>
 
     <p>
       <strong>
         Simulated Revenue Recovered:
       </strong>{" "}
-      ₹
-      {
-        batchResult
-          .total_revenue_recovered
-      }
+      {formatCurrency(
+        batchResult.total_revenue_recovered
+      )}
     </p>
 
     <p>
@@ -1856,11 +1995,9 @@ useEffect(() => {
     <strong>
       Simulated Revenue Recovered:
     </strong>{" "}
-    ₹
-    {
-      batchMetrics
-        .simulated_revenue_recovered
-    }
+    {formatCurrency(
+      batchMetrics.simulated_revenue_recovered
+    )}
   </p>
 
   <p>
