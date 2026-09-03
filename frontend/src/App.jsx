@@ -58,7 +58,7 @@ const [batchMetrics, setBatchMetrics] =
     remaining_failed_payments: 0,
     recovered_payments: 0,
   });
-
+  
   const [
   selectedPayment,
   setSelectedPayment
@@ -178,7 +178,7 @@ const [
       Number(value || 0)
     );
   };
-
+  
   const formatDate =
   (dateValue) => {
 
@@ -849,7 +849,9 @@ useEffect(() => {
           }}
         >
           <small>Revenue at Risk</small>
-          <h2>₹{revenueAtRisk ?? 0}</h2>
+          <h2>
+        {formatCurrency(revenueAtRisk)}
+        </h2>
         </div>
 
         <div
@@ -861,8 +863,10 @@ useEffect(() => {
         >
           <small>Simulated Recovered</small>
           <h2>
-            ₹{batchMetrics.simulated_revenue_recovered ?? 0}
-          </h2>
+ {formatCurrency(
+    batchMetrics.simulated_revenue_recovered
+  )}          
+  </h2>
         </div>
 
         <div
@@ -908,7 +912,7 @@ useEffect(() => {
         <h2>Revenue at Risk</h2>
 
         <h3>
-          ₹{revenueAtRisk}
+      {formatCurrency(revenueAtRisk)}
         </h3>
 
         <p>
@@ -1426,7 +1430,7 @@ useEffect(() => {
                     </td>
 
                     <td>
-                      ₹{payment.amount}
+                       {formatCurrency(payment.amount)}
                     </td>
 
                     <td>
@@ -1682,7 +1686,7 @@ useEffect(() => {
               {manualReview.payments.map((payment) => (
                 <tr key={payment.payment_id}>
                   <td>#{payment.payment_id}</td>
-                  <td>₹{payment.amount}</td>
+                  <td> {formatCurrency(payment.amount)}</td>
                   <td>{payment.policy_reason}</td>
                   <td>
                     <button
